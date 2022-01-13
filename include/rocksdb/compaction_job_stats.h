@@ -23,6 +23,9 @@ struct CompactionJobStats {
   // the elapsed CPU time of this compaction in microseconds.
   uint64_t cpu_micros;
 
+  // FinishCompactionOutputFile() microseconds.
+  uint64_t finish_output_file_micros;
+
   // the number of compaction input records.
   uint64_t num_input_records;
   // the number of blobs read from blob files

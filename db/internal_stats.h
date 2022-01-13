@@ -138,6 +138,8 @@ class InternalStats {
     uint64_t micros;
     uint64_t cpu_micros;
 
+    uint64_t finish_output_file_micros;
+
     // The number of bytes read from all non-output levels (table files)
     uint64_t bytes_read_non_output_levels;
 
@@ -283,6 +285,7 @@ class InternalStats {
     void Clear() {
       this->micros = 0;
       this->cpu_micros = 0;
+      this->finish_output_file_micros = 0;
       this->bytes_read_non_output_levels = 0;
       this->bytes_read_output_level = 0;
       this->bytes_read_blob = 0;

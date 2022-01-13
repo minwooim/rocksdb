@@ -641,9 +641,12 @@ Status CompactionJob::Run() {
 
   compaction_stats_.micros = db_options_.clock->NowMicros() - start_micros;
   compaction_stats_.cpu_micros = 0;
+  compaction_stats_.finish_output_file_micros = 0;
   for (size_t i = 0; i < compact_->sub_compact_states.size(); i++) {
     compaction_stats_.cpu_micros +=
         compact_->sub_compact_states[i].compaction_job_stats.cpu_micros;
+    compaction_stats_.finish_output_file_micros +=
+        compact_->sub_compact_states[i].compaction_job_stats.finish_output_file_micros;
   }
 
   RecordTimeToHistogram(stats_, COMPACTION_TIME, compaction_stats_.micros);
@@ -885,7 +888,9 @@ Status CompactionJob::Install(const MutableCFOptions& mutable_cf_options) {
   stream << "job" << job_id_ << "event"
          << "compaction_finished"
          << "compaction_time_micros" << stats.micros
-         << "compaction_time_cpu_micros" << stats.cpu_micros << "output_level"
+         << "compaction_time_cpu_micros" << stats.cpu_micros
+         << "compaction_finish_output_file_micros" << stats.finish_output_file_micros
+         << "output_level"
          << compact_->compaction->output_level() << "num_output_files"
          << compact_->num_output_files << "total_output_size"
          << compact_->total_bytes;
@@ -1122,6 +1127,8 @@ CompactionJob::ProcessKeyValueCompactionWithCompactionService(
 void CompactionJob::ProcessKeyValueCompaction(SubcompactionState* sub_compact) {
   assert(sub_compact);
   assert(sub_compact->compaction);
+
+  sub_compact->compaction_job_stats.finish_output_file_micros = 0;
 
 #ifndef ROCKSDB_LITE
   if (db_options_.compaction_service) {
@@ -1384,16 +1391,25 @@ void CompactionJob::ProcessKeyValueCompaction(SubcompactionState* sub_compact) {
       }
     }
     if (output_file_ended) {
+      uint64_t start_us = db_options_.clock->NowMicros();
       const Slice* next_key = nullptr;
       if (c_iter->Valid()) {
         next_key = &c_iter->key();
       }
       CompactionIterationStats range_del_out_stats;
+      ROCKS_LOG_INFO(db_options_.info_log,
+		      "ProcessKeyValueCompaction(): compaction output file, sst: L%d(#%ld), job: %d, sub_job: %d",
+		      sub_compact->compaction->output_level(),
+		      sub_compact->current_output()->meta.fd.GetNumber(), job_id_,
+              sub_compact->sub_job_id);
       status = FinishCompactionOutputFile(input->status(), sub_compact,
                                           &range_del_agg, &range_del_out_stats,
                                           next_key);
       RecordDroppedKeys(range_del_out_stats,
                         &sub_compact->compaction_job_stats);
+
+      sub_compact->compaction_job_stats.finish_output_file_micros +=
+          db_options_.clock->NowMicros() - start_us;
     }
   }
 
@@ -1461,12 +1477,21 @@ void CompactionJob::ProcessKeyValueCompaction(SubcompactionState* sub_compact) {
   // close the output file.
   if (sub_compact->builder != nullptr) {
     CompactionIterationStats range_del_out_stats;
+    uint64_t start_us = db_options_.clock->NowMicros();
+
+    ROCKS_LOG_INFO(db_options_.info_log,
+	      "ProcessKeyValueCompaction(): compaction output file, sst: L%d(#%ld), job: %d, sub_job: %d (last)",
+	      sub_compact->compaction->output_level(),
+	      sub_compact->current_output()->meta.fd.GetNumber(), job_id_,
+          sub_compact->sub_job_id);
     Status s = FinishCompactionOutputFile(status, sub_compact, &range_del_agg,
                                           &range_del_out_stats);
     if (!s.ok() && status.ok()) {
       status = s;
     }
     RecordDroppedKeys(range_del_out_stats, &sub_compact->compaction_job_stats);
+    sub_compact->compaction_job_stats.finish_output_file_micros +=
+        db_options_.clock->NowMicros() - start_us;
   }
 
   if (blob_file_builder) {

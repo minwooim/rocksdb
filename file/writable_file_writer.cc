@@ -57,6 +57,10 @@ IOStatus WritableFileWriter::Append(const Slice& data,
 
   // See whether we need to enlarge the buffer to avoid the flush
   if (buf_.Capacity() - buf_.CurrentSize() < left) {
+    // XXX: Just allocate buffer how much user gave
+    buf_.AllocateNewBuffer(max_buffer_size_, true);
+
+    /*
     for (size_t cap = buf_.Capacity();
          cap < max_buffer_size_;  // There is still room to increase
          cap *= 2) {
@@ -69,6 +73,7 @@ IOStatus WritableFileWriter::Append(const Slice& data,
         break;
       }
     }
+    */
   }
 
   // Flush only when buffered I/O

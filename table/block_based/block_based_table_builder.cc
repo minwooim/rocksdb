@@ -999,6 +999,7 @@ void BlockBasedTableBuilder::Add(const Slice& key, const Slice& value) {
 
 void BlockBasedTableBuilder::Flush() {
   Rep* r = rep_;
+
   assert(rep_->state != Rep::State::kClosed);
   if (!ok()) return;
   if (r->data_block.empty()) return;
@@ -1992,6 +1993,7 @@ Status BlockBasedTableBuilder::Finish() {
   //    5. [meta block: properties]
   //    6. [metaindex block]
   //    7. Footer
+  ROCKS_LOG_INFO(r->ioptions.logger, "BlockBasedTableBuilder::Finish(): Writing meta blocks.. (filter, index, ...)");
   BlockHandle metaindex_block_handle, index_block_handle;
   MetaIndexBuilder meta_index_builder;
   WriteFilterBlock(&meta_index_builder);
@@ -2001,6 +2003,7 @@ Status BlockBasedTableBuilder::Finish() {
   WritePropertiesBlock(&meta_index_builder);
   if (ok()) {
     // flush the meta index block
+    ROCKS_LOG_INFO(r->ioptions.logger, "BlockBasedTableBuilder::Finish(): Flushing meta blocks.. (filter, index, ...)");
     WriteRawBlock(meta_index_builder.Finish(), kNoCompression,
                   &metaindex_block_handle, BlockType::kMetaIndex);
   }
