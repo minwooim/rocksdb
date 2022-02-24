@@ -387,6 +387,11 @@ void CompactionIterator::NextFromInput() {
     bool user_key_equal_without_ts = false;
     int cmp_ts = 0;
     if (has_current_user_key_) {
+
+  ////////////////////////////////////////////////////////////////////////
+  // minwoo.im Overlapped key (different sequence number) cases....
+  ////////////////////////////////////////////////////////////////////////
+
       user_key_equal_without_ts =
           cmp_->EqualWithoutTimestamp(ikey_.user_key, current_user_key_);
       // if timestamp_size_ > 0, then curr_ts_ has been initialized by a
@@ -441,6 +446,11 @@ void CompactionIterator::NextFromInput() {
         break;
       }
     } else {
+
+  ////////////////////////////////////////////////////////////////////////
+  // minwoo.im Overlapped key (different sequence number) cases....
+  ////////////////////////////////////////////////////////////////////////
+
       // Update the current key to reflect the new sequence number/type without
       // copying the user key.
       // TODO(rven): Compaction filter does not process keys in this path
@@ -670,6 +680,10 @@ void CompactionIterator::NextFromInput() {
                         ") < current_user_key_sequence_ (%" PRIu64 ")",
                         last_sequence, current_user_key_sequence_);
       }
+
+  ////////////////////////////////////////////////////////////////////////
+  // minwoo.im: Overlapped key (different sequence number) cases....
+  ////////////////////////////////////////////////////////////////////////
 
       ++iter_stats_.num_record_drop_hidden;  // rule (A)
       AdvanceInputIter();
