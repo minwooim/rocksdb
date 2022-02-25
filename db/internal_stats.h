@@ -137,6 +137,8 @@ class InternalStats {
   struct CompactionStats {
     uint64_t micros;
     uint64_t cpu_micros;
+    uint64_t rt;
+    uint64_t wt;
 
     // The number of bytes read from all non-output levels (table files)
     uint64_t bytes_read_non_output_levels;

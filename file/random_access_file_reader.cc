@@ -87,7 +87,8 @@ IOStatus RandomAccessFileReader::Read(const IOOptions& opts, uint64_t offset,
           // the opts.timeout before calling file_->Read
           assert(!opts.timeout.count() || allowed == read_size);
           io_s = file_->Read(aligned_offset + buf.CurrentSize(), allowed, opts,
-                             &tmp, buf.Destination(), nullptr);
+                             &tmp, buf.Destination(),
+                             new IODebugContext(for_compaction));
         }
         if (ShouldNotifyListeners()) {
           auto finish_ts = FileOperationInfo::FinishNow();
@@ -147,7 +148,8 @@ IOStatus RandomAccessFileReader::Read(const IOOptions& opts, uint64_t offset,
           // the opts.timeout before calling file_->Read
           assert(!opts.timeout.count() || allowed == n);
           io_s = file_->Read(offset + pos, allowed, opts, &tmp_result,
-                             scratch + pos, nullptr);
+                             scratch + pos,
+                             new IODebugContext(for_compaction));
         }
 #ifndef ROCKSDB_LITE
         if (ShouldNotifyListeners()) {

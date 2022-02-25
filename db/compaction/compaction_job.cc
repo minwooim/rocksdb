@@ -19,6 +19,7 @@
 #include <thread>
 #include <utility>
 #include <vector>
+#include <chrono>
 
 #include "db/blob/blob_counting_iterator.h"
 #include "db/blob/blob_file_addition.h"
@@ -885,6 +886,8 @@ Status CompactionJob::Install(const MutableCFOptions& mutable_cf_options) {
   stream << "job" << job_id_ << "event"
          << "compaction_finished"
          << "compaction_time_micros" << stats.micros
+         << "compaction_read_time" << stats.rt
+         << "compaction_write_time" << stats.wt
          << "compaction_time_cpu_micros" << stats.cpu_micros << "output_level"
          << compact_->compaction->output_level() << "num_output_files"
          << compact_->num_output_files << "total_output_size"
@@ -1216,7 +1219,11 @@ void CompactionJob::ProcessKeyValueCompaction(SubcompactionState* sub_compact) {
     input = blob_counter.get();
   }
 
+  compaction_stats_.rt = 0;
+  compaction_stats_.wt = 0;
+  uint64_t st = db_options_.clock->CPUNanos() / 1000;
   input->SeekToFirst();
+  compaction_stats_.rt += db_options_.clock->CPUNanos() / 1000 - st;
 
   AutoThreadOperationStageUpdater stage_updater(
       ThreadStatus::STAGE_COMPACTION_PROCESS_KV);
@@ -1364,7 +1371,10 @@ void CompactionJob::ProcessKeyValueCompaction(SubcompactionState* sub_compact) {
       last_key_for_partitioner.assign(c_iter->user_key().data_,
                                       c_iter->user_key().size_);
     }
+
+    st = db_options_.clock->CPUNanos() / 1000;
     c_iter->Next();
+    compaction_stats_.rt += db_options_.clock->CPUNanos() / 1000 - st;
     if (c_iter->status().IsManualCompactionPaused()) {
       break;
     }
@@ -1389,9 +1399,11 @@ void CompactionJob::ProcessKeyValueCompaction(SubcompactionState* sub_compact) {
         next_key = &c_iter->key();
       }
       CompactionIterationStats range_del_out_stats;
+      st = db_options_.clock->CPUNanos() / 1000;
       status = FinishCompactionOutputFile(input->status(), sub_compact,
                                           &range_del_agg, &range_del_out_stats,
                                           next_key);
+      compaction_stats_.wt += db_options_.clock->CPUNanos() / 1000 - st;
       RecordDroppedKeys(range_del_out_stats,
                         &sub_compact->compaction_job_stats);
     }
@@ -1461,8 +1473,10 @@ void CompactionJob::ProcessKeyValueCompaction(SubcompactionState* sub_compact) {
   // close the output file.
   if (sub_compact->builder != nullptr) {
     CompactionIterationStats range_del_out_stats;
+    st = db_options_.clock->CPUNanos() / 1000;
     Status s = FinishCompactionOutputFile(status, sub_compact, &range_del_agg,
                                           &range_del_out_stats);
+    compaction_stats_.wt += db_options_.clock->CPUNanos() / 1000 - st;
     if (!s.ok() && status.ok()) {
       status = s;
     }
