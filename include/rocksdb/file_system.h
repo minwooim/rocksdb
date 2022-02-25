@@ -32,6 +32,7 @@
 #include "rocksdb/options.h"
 #include "rocksdb/table.h"
 #include "rocksdb/thread_status.h"
+#include "util/aligned_buffer.h"
 
 namespace ROCKSDB_NAMESPACE {
 
@@ -159,6 +160,14 @@ struct IODebugContext {
   uint64_t trace_data = 0;
 
   IODebugContext() {}
+
+  AlignedBuffer *buf_;
+  size_t file_advance_;
+  size_t leftover_tail_;
+  IODebugContext(AlignedBuffer *buf, size_t f, size_t l) :
+                      buf_(buf),
+                      file_advance_(f),
+                      leftover_tail_(l)  {}
 
   void AddCounter(std::string& name, uint64_t value) {
     counters.emplace(name, value);
