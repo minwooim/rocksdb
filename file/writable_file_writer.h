@@ -185,7 +185,7 @@ class WritableFileWriter {
     buf_ = new AlignedBuffer;
     buf_->Alignment(writable_file_->GetRequiredBufferAlignment());
     // ZSG_WRITERS
-    buf_->AllocateNewBuffer(ZSG_SUB_GROUP_SIZE);
+    buf_->AllocateNewBuffer(ZSG_ZONE_SIZE);
 #ifndef ROCKSDB_LITE
     std::for_each(listeners.begin(), listeners.end(),
                   [this](const std::shared_ptr<EventListener>& e) {

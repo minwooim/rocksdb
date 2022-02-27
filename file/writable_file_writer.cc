@@ -288,7 +288,7 @@ IOStatus WritableFileWriter::Flush() {
           if (file_name_.substr(file_name_.size() - 3) == "sst") {
             buf_ = new AlignedBuffer;
             buf_->Alignment(writable_file_->GetRequiredBufferAlignment());
-            buf_->AllocateNewBuffer(ZSG_SUB_GROUP_SIZE);
+            buf_->AllocateNewBuffer(ZSG_ZONE_SIZE);
             ROCKS_LOG_INFO(_logger, "%s: new buffer: %p",
                 file_name_.c_str(), buf_->BufferStart());
           }

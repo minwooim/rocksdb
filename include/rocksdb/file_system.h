@@ -161,6 +161,10 @@ struct IODebugContext {
 
   IODebugContext() {}
 
+  // for prefetch concurrent reads
+  bool for_compaction_;
+  IODebugContext(bool c) : for_compaction_(c) {}
+
   AlignedBuffer *buf_;
   size_t file_advance_;
   size_t leftover_tail_;
