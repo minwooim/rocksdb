@@ -65,6 +65,10 @@ class FilePrefetchBuffer {
         prev_len_(0),
         num_file_reads_(kMinNumFileReadsToStartAutoReadahead + 1) {}
 
+  ~FilePrefetchBuffer() {
+    delete buffer_.Release();
+  }
+
   // Load data into the buffer from a file.
   // reader : the file reader.
   // offset : the file offset to start reading from.
@@ -103,9 +107,9 @@ class FilePrefetchBuffer {
     num_file_reads_ = 1;
     readahead_size_ = initial_readahead_size_;
   }
+  AlignedBuffer buffer_;
 
  private:
-  AlignedBuffer buffer_;
   uint64_t buffer_offset_;
   RandomAccessFileReader* file_reader_;
   size_t readahead_size_;

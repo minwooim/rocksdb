@@ -285,12 +285,9 @@ IOStatus WritableFileWriter::Flush() {
 
           // Swap buffers to make progress even if current buffer flush is not
           // finished.
-          if (file_name_.substr(file_name_.size() - 3) == "sst") {
-            buf_ = new AlignedBuffer;
-            buf_->Alignment(writable_file_->GetRequiredBufferAlignment());
-            buf_->AllocateNewBuffer(ZSG_ZONE_SIZE);
-          }
-
+          buf_ = new AlignedBuffer;
+          buf_->Alignment(writable_file_->GetRequiredBufferAlignment());
+          buf_->AllocateNewBuffer(ZSG_ZONE_SIZE);
         }
       }
 #endif  // !ROCKSDB_LITE

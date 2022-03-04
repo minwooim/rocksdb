@@ -182,6 +182,11 @@ void BlockBasedTableIterator::Next() {
   block_iter_.Next();
   FindKeyForward();
   CheckOutOfBound();
+
+  // release prefetch buffers right after iteration ends up.
+  if (!Valid()) {
+    delete block_prefetcher_.prefetch_buffer()->buffer_.Release();
+  }
 }
 
 bool BlockBasedTableIterator::NextAndGetResult(IterateResult* result) {

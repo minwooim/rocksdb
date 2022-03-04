@@ -184,8 +184,13 @@ class WritableFileWriter {
                              reinterpret_cast<void*>(max_buffer_size_));
     buf_ = new AlignedBuffer;
     buf_->Alignment(writable_file_->GetRequiredBufferAlignment());
-    // ZSG_WRITERS
-    buf_->AllocateNewBuffer(ZSG_ZONE_SIZE);
+
+    if (file_name_.substr(file_name_.size() - 3) == "sst") {
+      // ZSG_WRITERS
+      buf_->AllocateNewBuffer(ZSG_ZONE_SIZE);
+    } else {
+      buf_->AllocateNewBuffer(std::min((size_t)65536, max_buffer_size_));
+    }
 #ifndef ROCKSDB_LITE
     std::for_each(listeners.begin(), listeners.end(),
                   [this](const std::shared_ptr<EventListener>& e) {
@@ -216,6 +221,7 @@ class WritableFileWriter {
   ~WritableFileWriter() {
     auto s = Close();
     s.PermitUncheckedError();
+    delete buf_->Release();
   }
 
   std::string file_name() const { return file_name_; }
