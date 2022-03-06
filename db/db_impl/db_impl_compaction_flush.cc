@@ -2335,6 +2335,10 @@ void DBImpl::MaybeScheduleFlushOrCompaction() {
     ca->prepicked_compaction = nullptr;
     bg_compaction_scheduled_++;
     unscheduled_compactions_--;
+    ROCKS_LOG_INFO(immutable_db_options_.info_log,
+                   "max_compactions=%d, bg_compaction_scheduled=%d",
+                   bg_job_limits.max_compactions,
+                   bg_compaction_scheduled_);
     env_->Schedule(&DBImpl::BGWorkCompaction, ca, Env::Priority::LOW, this,
                    &DBImpl::UnscheduleCompactionCallback);
   }
