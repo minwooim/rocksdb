@@ -63,9 +63,14 @@ class FilePrefetchBuffer {
         implicit_auto_readahead_(implicit_auto_readahead),
         prev_offset_(0),
         prev_len_(0),
-        num_file_reads_(kMinNumFileReadsToStartAutoReadahead + 1) {}
+        num_file_reads_(kMinNumFileReadsToStartAutoReadahead + 1) {
+          thread_ = nullptr;
+        }
 
   ~FilePrefetchBuffer() {
+    if (thread_) {
+      thread_->join();
+    }
     delete buffer_.Release();
   }
 
@@ -108,6 +113,7 @@ class FilePrefetchBuffer {
     readahead_size_ = initial_readahead_size_;
   }
   AlignedBuffer buffer_;
+  std::thread *thread_;
 
  private:
   uint64_t buffer_offset_;
