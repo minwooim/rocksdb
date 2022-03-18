@@ -23,23 +23,14 @@
 
 namespace ROCKSDB_NAMESPACE {
 
-extern std::shared_ptr<Logger> _logger;
-
 static void BGReadahead(const IOOptions& opts,
                         RandomAccessFileReader* reader,
                         uint64_t offset, size_t n,
                         AlignedBuffer* buf, uint64_t buf_offset) {
   Slice result;
-  Status s;
 
-  ROCKS_LOG_INFO(_logger, "%s: Thread [%lu, %lu)\n", reader->file_name().c_str(),
-      offset, offset + n);
-  s = reader->Read(opts, offset, n, &result, buf->BufferStart() + buf_offset,
-                   nullptr, true);
-  if (!s.ok() || result.size() != n) {
-    ROCKS_LOG_INFO(_logger, "%s: Thread failed, %lu vs %lu\n", reader->file_name().c_str(),
-        result.size(), n);
-  }
+  reader->Read(opts, offset, n, &result, buf->BufferStart() + buf_offset,
+               nullptr, true);
 }
 
 Status FilePrefetchBuffer::Prefetch(const IOOptions& opts,
@@ -67,10 +58,6 @@ Status FilePrefetchBuffer::Prefetch(const IOOptions& opts,
   //     This is typically the case of incremental reading of data.
   // If no bytes exist in buffer -- full pread.
 
-  if (for_compaction) {
-    ROCKS_LOG_INFO(_logger, "%s: Prefetch(offset=%lu, size=%lu)\n", reader->file_name().c_str(),
-        offset, n);
-  }
   Status s;
   uint64_t chunk_offset_in_buffer = 0;
   uint64_t chunk_len = 0;
@@ -112,27 +99,15 @@ Status FilePrefetchBuffer::Prefetch(const IOOptions& opts,
     buffer_.AllocateNewBuffer(size,
                               copy_data_to_new_buffer, chunk_offset_in_buffer,
                               static_cast<size_t>(chunk_len));
-    if (for_compaction) {
-      ROCKS_LOG_INFO(_logger, "%s: buffer alloc (%d) %lu\n", reader->file_name().c_str(),
-                                       copy_data_to_new_buffer, buffer_.Capacity());
-    }
   } else if (chunk_len > 0) {
     // New buffer not needed. But memmove bytes from tail to the beginning since
     // chunk_len is greater than 0.
     buffer_.RefitTail(static_cast<size_t>(chunk_offset_in_buffer),
                       static_cast<size_t>(chunk_len));
-      ROCKS_LOG_INFO(_logger, "%s: Refit Tail %lu, size=%lu\n", reader->file_name().c_str(),
-             chunk_offset_in_buffer, chunk_len);
   }
 
   Slice result;
   size_t read_len = static_cast<size_t>(roundup_len - chunk_len);
-  if (for_compaction) {
-    ROCKS_LOG_INFO(_logger, "%s: Main +%lu [%lu, %lu)\n", reader->file_name().c_str(),
-        chunk_len,
-        rounddown_offset + chunk_len,
-        rounddown_offset + chunk_len + read_len);
-  }
   s = reader->Read(opts, rounddown_offset + chunk_len, read_len, &result,
                    buffer_.BufferStart() + chunk_len, nullptr, for_compaction);
   if (!s.ok()) {
@@ -167,9 +142,6 @@ Status FilePrefetchBuffer::Prefetch(const IOOptions& opts,
   if (for_compaction) {
     buffer_.Size(static_cast<size_t>(chunk_len) + read_len +
                  buffer_.Capacity() - chunk_len - read_len);
-    ROCKS_LOG_INFO(_logger, "%s: Final [%lu, %lu) size=%lu\n", reader->file_name().c_str(),
-        buffer_offset_, buffer_offset_ + buffer_.CurrentSize(),
-        buffer_.CurrentSize());
   } else {
     buffer_.Size(static_cast<size_t>(chunk_len) + read_len);
   }
