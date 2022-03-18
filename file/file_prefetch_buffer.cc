@@ -50,10 +50,7 @@ Status FilePrefetchBuffer::Prefetch(const IOOptions& opts,
     return Status::OK();
   }
 
-  if (thread_) {
-    thread_->join();
-    thread_ = nullptr;
-  }
+  WaitForThreads();
 
   TEST_SYNC_POINT("FilePrefetchBuffer::Prefetch:Start");
   size_t alignment = reader->file()->GetRequiredBufferAlignment();
@@ -108,7 +105,8 @@ Status FilePrefetchBuffer::Prefetch(const IOOptions& opts,
   // bytes from old buffer if needed (i.e., if chunk_len is greater than 0).
   if (buffer_.Capacity() < roundup_len) {
     size_t size = (for_compaction) ?
-        static_cast<size_t>(roundup_len) * 2 : static_cast<size_t>(roundup_len);
+        static_cast<size_t>(roundup_len) * ZSG_NR_BUFFERING :
+        static_cast<size_t>(roundup_len);
 
     buffer_.Alignment(alignment);
     buffer_.AllocateNewBuffer(size,
@@ -142,13 +140,19 @@ Status FilePrefetchBuffer::Prefetch(const IOOptions& opts,
   }
 
   if (for_compaction) {
-    if (thread_) {
-      thread_->join();
+    uint64_t buff_offset = chunk_len + result.size();
+    uint64_t file_offset = rounddown_offset + buff_offset;
+    size_t left = buffer_.Capacity() - chunk_len - result.size();
+    each_ = left / ZSG_NR_BUFFERING;
+
+    prev_thread_ = 0;
+
+    for (int i = 0; i < static_cast<int>(thread_.size()); i++) {
+      size_t _size = (left < each_) ? left : each_;
+      thread_[i] = new std::thread(BGReadahead, opts, reader,
+                                   file_offset + (i * each_), _size, 
+                                   &buffer_, buff_offset + (i * each_));
     }
-    thread_ = new std::thread(BGReadahead, opts, reader,
-                   rounddown_offset + chunk_len + result.size(),
-                   buffer_.Capacity() - chunk_len - result.size(),
-                   &buffer_, chunk_len + result.size());
   }
 
 #ifndef NDEBUG
@@ -235,11 +239,9 @@ bool FilePrefetchBuffer::TryReadFromCache(const IOOptions& opts,
   // We need to check whehter the half of the buffer is still on-going in the
   // background or not.
   if (for_compaction) {
-    if (offset + n > buffer_offset_ + (buffer_.CurrentSize() >> 1)) {
-      if (thread_) {
-        thread_->join();
-        thread_ = nullptr;
-      }
+    if (offset + n > buffer_offset_ + each_ * (prev_thread_ + 1) &&
+        prev_thread_ < ZSG_NR_BUFFERING) {
+      WaitForThreads(prev_thread_++);
     }
   }
 

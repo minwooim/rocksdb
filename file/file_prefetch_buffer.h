@@ -64,13 +64,14 @@ class FilePrefetchBuffer {
         prev_offset_(0),
         prev_len_(0),
         num_file_reads_(kMinNumFileReadsToStartAutoReadahead + 1) {
-          thread_ = nullptr;
+          for (int i = 0; i < static_cast<int>(thread_.size()); i++) {
+            thread_[i] = nullptr;
+          }
         }
 
   ~FilePrefetchBuffer() {
-    if (thread_) {
-      thread_->join();
-    }
+    WaitForThreads();
+    prev_thread_ = 0;
     delete buffer_.Release();
   }
 
@@ -113,7 +114,26 @@ class FilePrefetchBuffer {
     readahead_size_ = initial_readahead_size_;
   }
   AlignedBuffer buffer_;
-  std::thread *thread_;
+#define ZSG_NR_BUFFERING  4
+  std::array<std::thread*, ZSG_NR_BUFFERING> thread_;
+  size_t each_;
+  uint64_t prev_thread_;
+
+  inline void WaitForThreads() {
+    for (int i = 0; i < static_cast<int>(thread_.size()); i++) {
+      if (thread_[i]) {
+        thread_[i]->join();
+        thread_[i] = nullptr;
+      }
+    }
+  }
+
+  inline void WaitForThreads(int id) {
+    if (thread_[id]) {
+      thread_[id]->join();
+      thread_[id] = nullptr;
+    }
+  }
 
  private:
   uint64_t buffer_offset_;
