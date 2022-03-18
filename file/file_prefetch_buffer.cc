@@ -108,16 +108,11 @@ Status FilePrefetchBuffer::Prefetch(const IOOptions& opts,
 
   Slice result;
   size_t read_len = static_cast<size_t>(roundup_len - chunk_len);
-  s = reader->Read(opts, rounddown_offset + chunk_len, read_len, &result,
-                   buffer_.BufferStart() + chunk_len, nullptr, for_compaction);
-  if (!s.ok()) {
-    return s;
-  }
 
   if (for_compaction) {
-    uint64_t buff_offset = chunk_len + result.size();
+    uint64_t buff_offset = chunk_len + read_len;
     uint64_t file_offset = rounddown_offset + buff_offset;
-    size_t left = buffer_.Capacity() - chunk_len - result.size();
+    size_t left = buffer_.Capacity() - chunk_len - read_len;
     each_ = left / ZSG_NR_BUFFERING;
 
     prev_thread_ = 0;
@@ -128,6 +123,12 @@ Status FilePrefetchBuffer::Prefetch(const IOOptions& opts,
                                    file_offset + (i * each_), _size, 
                                    &buffer_, buff_offset + (i * each_));
     }
+  }
+
+  s = reader->Read(opts, rounddown_offset + chunk_len, read_len, &result,
+                   buffer_.BufferStart() + chunk_len, nullptr, for_compaction);
+  if (!s.ok()) {
+    return s;
   }
 
 #ifndef NDEBUG
