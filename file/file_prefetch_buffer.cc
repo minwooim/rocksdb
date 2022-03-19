@@ -92,7 +92,7 @@ Status FilePrefetchBuffer::Prefetch(const IOOptions& opts,
   // bytes from old buffer if needed (i.e., if chunk_len is greater than 0).
   if (buffer_.Capacity() < roundup_len) {
     size_t size = (for_compaction) ?
-        static_cast<size_t>(roundup_len) * ZSG_NR_BUFFERING :
+        static_cast<size_t>(roundup_len) * (ZSG_NR_BUFFERING + 1) :
         static_cast<size_t>(roundup_len);
 
     buffer_.Alignment(alignment);
