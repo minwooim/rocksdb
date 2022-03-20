@@ -11,6 +11,7 @@
 
 #include <algorithm>
 #include <mutex>
+#include <iostream>
 
 #include "file/random_access_file_reader.h"
 #include "monitoring/histogram.h"
@@ -26,11 +27,11 @@ namespace ROCKSDB_NAMESPACE {
 static void BGReadahead(const IOOptions& opts,
                         RandomAccessFileReader* reader,
                         uint64_t offset, size_t n,
-                        AlignedBuffer* buf, uint64_t buf_offset) {
+                        AlignedBuffer* buf) {
   Slice result;
 
-  reader->Read(opts, offset, n, &result, buf->BufferStart() + buf_offset,
-               nullptr, true);
+  reader->Read(opts, offset, n, &result, buf->BufferStart(), nullptr, true);
+  buf->Size(result.size());
 }
 
 Status FilePrefetchBuffer::Prefetch(const IOOptions& opts,
@@ -40,8 +41,6 @@ Status FilePrefetchBuffer::Prefetch(const IOOptions& opts,
   if (!enable_ || reader == nullptr) {
     return Status::OK();
   }
-
-  WaitForThreads();
 
   TEST_SYNC_POINT("FilePrefetchBuffer::Prefetch:Start");
   size_t alignment = reader->file()->GetRequiredBufferAlignment();
@@ -62,9 +61,9 @@ Status FilePrefetchBuffer::Prefetch(const IOOptions& opts,
   uint64_t chunk_offset_in_buffer = 0;
   uint64_t chunk_len = 0;
   bool copy_data_to_new_buffer = false;
-  if (buffer_.CurrentSize() > 0 && offset >= buffer_offset_ &&
-      offset <= buffer_offset_ + buffer_.CurrentSize()) {
-    if (offset + n <= buffer_offset_ + buffer_.CurrentSize()) {
+  if (buffer_->CurrentSize() > 0 && offset >= buffer_offset_ &&
+      offset <= buffer_offset_ + buffer_->CurrentSize()) {
+    if (offset + n <= buffer_offset_ + buffer_->CurrentSize()) {
       // All requested bytes are already in the buffer. So no need to Read
       // again.
       return s;
@@ -74,11 +73,11 @@ Status FilePrefetchBuffer::Prefetch(const IOOptions& opts,
       // new buffer is created.
       chunk_offset_in_buffer =
           Rounddown(static_cast<size_t>(offset - buffer_offset_), alignment);
-      chunk_len = buffer_.CurrentSize() - chunk_offset_in_buffer;
+      chunk_len = buffer_->CurrentSize() - chunk_offset_in_buffer;
       assert(chunk_offset_in_buffer % alignment == 0);
       assert(chunk_len % alignment == 0);
       assert(chunk_offset_in_buffer + chunk_len <=
-             buffer_offset_ + buffer_.CurrentSize());
+             buffer_offset_ + buffer_->CurrentSize());
       if (chunk_len > 0) {
         copy_data_to_new_buffer = true;
       } else {
@@ -90,19 +89,15 @@ Status FilePrefetchBuffer::Prefetch(const IOOptions& opts,
 
   // Create a new buffer only if current capacity is not sufficient, and memcopy
   // bytes from old buffer if needed (i.e., if chunk_len is greater than 0).
-  if (buffer_.Capacity() < roundup_len) {
-    size_t size = (for_compaction) ?
-        static_cast<size_t>(roundup_len) * (ZSG_NR_BUFFERING + 1) :
-        static_cast<size_t>(roundup_len);
-
-    buffer_.Alignment(alignment);
-    buffer_.AllocateNewBuffer(size,
+  if (buffer_->Capacity() < roundup_len) {
+    buffer_->Alignment(alignment);
+    buffer_->AllocateNewBuffer(static_cast<size_t>(roundup_len),
                               copy_data_to_new_buffer, chunk_offset_in_buffer,
                               static_cast<size_t>(chunk_len));
   } else if (chunk_len > 0) {
     // New buffer not needed. But memmove bytes from tail to the beginning since
     // chunk_len is greater than 0.
-    buffer_.RefitTail(static_cast<size_t>(chunk_offset_in_buffer),
+    buffer_->RefitTail(static_cast<size_t>(chunk_offset_in_buffer),
                       static_cast<size_t>(chunk_len));
   }
 
@@ -112,21 +107,18 @@ Status FilePrefetchBuffer::Prefetch(const IOOptions& opts,
   if (for_compaction) {
     uint64_t buff_offset = chunk_len + read_len;
     uint64_t file_offset = rounddown_offset + buff_offset;
-    size_t left = buffer_.Capacity() - chunk_len - read_len;
-    each_ = left / ZSG_NR_BUFFERING;
+    assert(buffer_switch_ == nullptr);
 
-    prev_thread_ = 0;
-
-    for (int i = 0; i < static_cast<int>(thread_.size()); i++) {
-      size_t _size = (left < each_) ? left : each_;
-      thread_[i] = new std::thread(BGReadahead, opts, reader,
-                                   file_offset + (i * each_), _size, 
-                                   &buffer_, buff_offset + (i * each_));
-    }
+    buffer_switch_ = new AlignedBuffer;
+    buffer_switch_->Alignment(alignment);
+    buffer_switch_->AllocateNewBuffer(readahead_size_);
+    thread_ = new std::thread(BGReadahead, opts, reader,
+                              file_offset, buffer_switch_->Capacity(),
+                              buffer_switch_);
   }
 
   s = reader->Read(opts, rounddown_offset + chunk_len, read_len, &result,
-                   buffer_.BufferStart() + chunk_len, nullptr, for_compaction);
+                   buffer_->BufferStart() + chunk_len, nullptr, for_compaction);
   if (!s.ok()) {
     return s;
   }
@@ -139,14 +131,76 @@ Status FilePrefetchBuffer::Prefetch(const IOOptions& opts,
   }
 #endif
   buffer_offset_ = rounddown_offset;
-
-  if (for_compaction) {
-    buffer_.Size(static_cast<size_t>(chunk_len) + read_len +
-                 buffer_.Capacity() - chunk_len - read_len);
-  } else {
-    buffer_.Size(static_cast<size_t>(chunk_len) + read_len);
-  }
+  buffer_->Size(static_cast<size_t>(chunk_len) + result.size());
   return s;
+}
+
+void FilePrefetchBuffer::SwapBuffersAndReadahead(const IOOptions& opts) {
+  AlignedBuffer* tmp;
+
+  tmp = buffer_switch_;
+  buffer_switch_ = buffer_;
+  buffer_ = tmp;
+
+  thread_ = new std::thread(BGReadahead, opts, file_reader_,
+                            buffer_offset_ + buffer_->CurrentSize(),
+                            buffer_switch_->Capacity(), buffer_switch_);
+}
+
+bool FilePrefetchBuffer::TryReadFromCacheForCompaction(const IOOptions& opts,
+                                          uint64_t offset, size_t n,
+                                          Slice* result, Status* /*status*/) {
+  // First time for this compaction
+  if (!buffer_->CurrentSize()) {
+    Prefetch(opts, file_reader_, offset, std::max(n, readahead_size_), true);
+    *result = Slice(buffer_->BufferStart() + offset - buffer_offset_, n);
+  } else if (offset < buffer_offset_ + buffer_->CurrentSize() &&
+             offset + n > buffer_offset_ + buffer_->CurrentSize()) {
+    // Now, we should switch the buffer to the new one with triggering a new
+    // thread to read the next data.  In this situation, we can guarantee that
+    // the switch buffer is already ready.
+    size_t alignment = file_reader_->file()->GetRequiredBufferAlignment();
+    uint64_t chunk_offset_in_buffer =
+          Rounddown(static_cast<size_t>(offset - buffer_offset_), alignment);
+    uint64_t chunk_len = buffer_->CurrentSize() - chunk_offset_in_buffer;
+    size_t roundup_len = Roundup(n, alignment);
+
+    thread_->join();
+
+    if (buffer_spanning_.Capacity() < roundup_len) {
+      buffer_spanning_.Alignment(alignment);
+      buffer_spanning_.AllocateNewBuffer(chunk_len + roundup_len);
+    }
+
+    memcpy(buffer_spanning_.BufferStart(),
+           buffer_->BufferStart() + chunk_offset_in_buffer, chunk_len);
+    memcpy(buffer_spanning_.BufferStart() + chunk_len,
+           buffer_switch_->BufferStart(), roundup_len);
+
+    *result = Slice(buffer_spanning_.BufferStart() +
+                    (offset - buffer_offset_) - chunk_offset_in_buffer, n);
+
+    buffer_offset_ += buffer_->CurrentSize();
+    if (buffer_switch_->CurrentSize() != buffer_switch_->Capacity()) {
+      // In this case, the last chunk of the file.
+      delete buffer_->Release();
+      buffer_ = buffer_switch_;
+      buffer_switch_ = nullptr;
+    } else {
+      SwapBuffersAndReadahead(opts);
+    }
+  } else if (offset == buffer_offset_ + buffer_->CurrentSize()) {
+    thread_->join();
+    buffer_offset_ += buffer_->CurrentSize();
+    SwapBuffersAndReadahead(opts);
+    *result = Slice(buffer_->BufferStart() + offset - buffer_offset_, n);
+  } else {
+    // Now, it's time to trigger a new thread to read the next readahead block.
+    *result = Slice(buffer_->BufferStart() + offset - buffer_offset_, n);
+  }
+
+  UpdateReadPattern(offset, n);
+  return true;
 }
 
 bool FilePrefetchBuffer::TryReadFromCache(const IOOptions& opts,
@@ -160,40 +214,40 @@ bool FilePrefetchBuffer::TryReadFromCache(const IOOptions& opts,
     return false;
   }
 
+  if (for_compaction) {
+    return TryReadFromCacheForCompaction(opts, offset, n, result, status);
+  }
+
   // If the buffer contains only a few of the requested bytes:
   //    If readahead is enabled: prefetch the remaining bytes + readahead bytes
   //        and satisfy the request.
   //    If readahead is not enabled: return false.
-  if (offset + n > buffer_offset_ + buffer_.CurrentSize()) {
+  if (offset + n > buffer_offset_ + buffer_->CurrentSize()) {
     if (readahead_size_ > 0) {
       assert(file_reader_ != nullptr);
       assert(max_readahead_size_ >= readahead_size_);
       Status s;
-      if (for_compaction) {
-        s = Prefetch(opts, file_reader_, offset, std::max(n, readahead_size_),
-                     for_compaction);
-      } else {
-        if (implicit_auto_readahead_) {
-          // Prefetch only if this read is sequential otherwise reset
-          // readahead_size_ to initial value.
-          if (!IsBlockSequential(offset)) {
-            UpdateReadPattern(offset, n);
-            ResetValues();
-            // Ignore status as Prefetch is not called.
-            s.PermitUncheckedError();
-            return false;
-          }
-          num_file_reads_++;
-          if (num_file_reads_ <= kMinNumFileReadsToStartAutoReadahead) {
-            UpdateReadPattern(offset, n);
-            // Ignore status as Prefetch is not called.
-            s.PermitUncheckedError();
-            return false;
-          }
+
+      if (implicit_auto_readahead_) {
+        // Prefetch only if this read is sequential otherwise reset
+        // readahead_size_ to initial value.
+        if (!IsBlockSequential(offset)) {
+          UpdateReadPattern(offset, n);
+          ResetValues();
+          // Ignore status as Prefetch is not called.
+          s.PermitUncheckedError();
+          return false;
         }
-        s = Prefetch(opts, file_reader_, offset, n + readahead_size_,
-                     for_compaction);
+        num_file_reads_++;
+        if (num_file_reads_ <= kMinNumFileReadsToStartAutoReadahead) {
+          UpdateReadPattern(offset, n);
+          // Ignore status as Prefetch is not called.
+          s.PermitUncheckedError();
+          return false;
+        }
       }
+      s = Prefetch(opts, file_reader_, offset, n + readahead_size_,
+                   for_compaction);
       if (!s.ok()) {
         if (status) {
           *status = s;
@@ -209,18 +263,9 @@ bool FilePrefetchBuffer::TryReadFromCache(const IOOptions& opts,
     }
   }
 
-  // We need to check whehter the half of the buffer is still on-going in the
-  // background or not.
-  if (for_compaction) {
-    if (offset + n > buffer_offset_ + each_ * (prev_thread_ + 1) &&
-        prev_thread_ < ZSG_NR_BUFFERING) {
-      WaitForThreads(prev_thread_++);
-    }
-  }
-
   UpdateReadPattern(offset, n);
   uint64_t offset_in_buffer = offset - buffer_offset_;
-  *result = Slice(buffer_.BufferStart() + offset_in_buffer, n);
+  *result = Slice(buffer_->BufferStart() + offset_in_buffer, n);
   return true;
 }
 }  // namespace ROCKSDB_NAMESPACE

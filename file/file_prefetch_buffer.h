@@ -64,15 +64,21 @@ class FilePrefetchBuffer {
         prev_offset_(0),
         prev_len_(0),
         num_file_reads_(kMinNumFileReadsToStartAutoReadahead + 1) {
-          for (int i = 0; i < static_cast<int>(thread_.size()); i++) {
-            thread_[i] = nullptr;
-          }
+          buffer_ = new AlignedBuffer;
+          buffer_switch_ = nullptr;
+          thread_ = nullptr;
         }
 
   ~FilePrefetchBuffer() {
-    WaitForThreads();
-    prev_thread_ = 0;
-    delete buffer_.Release();
+    if (thread_) {
+      thread_->join();
+      thread_ = nullptr;
+    }
+    delete buffer_->Release();
+    delete buffer_spanning_.Release();
+    if (buffer_switch_) {
+      delete buffer_switch_->Release();
+    }
   }
 
   // Load data into the buffer from a file.
@@ -83,6 +89,7 @@ class FilePrefetchBuffer {
   Status Prefetch(const IOOptions& opts, RandomAccessFileReader* reader,
                   uint64_t offset, size_t n, bool for_compaction = false);
 
+  void SwapBuffersAndReadahead(const IOOptions& opts);
   // Tries returning the data for a file raed from this buffer, if that data is
   // in the buffer.
   // It handles tracking the minimum read offset if track_min_offset = true.
@@ -93,6 +100,8 @@ class FilePrefetchBuffer {
   // n      : the number of bytes.
   // result : output buffer to put the data into.
   // for_compaction : if cache read is done for compaction read.
+  bool TryReadFromCacheForCompaction(const IOOptions& opts, uint64_t offset, size_t n,
+                                     Slice* result, Status* s);
   bool TryReadFromCache(const IOOptions& opts, uint64_t offset, size_t n,
                         Slice* result, Status* s, bool for_compaction = false);
 
@@ -113,27 +122,10 @@ class FilePrefetchBuffer {
     num_file_reads_ = 1;
     readahead_size_ = initial_readahead_size_;
   }
-  AlignedBuffer buffer_;
-#define ZSG_NR_BUFFERING  4
-  std::array<std::thread*, ZSG_NR_BUFFERING> thread_;
-  size_t each_;
-  uint64_t prev_thread_;
-
-  inline void WaitForThreads() {
-    for (int i = 0; i < static_cast<int>(thread_.size()); i++) {
-      if (thread_[i]) {
-        thread_[i]->join();
-        thread_[i] = nullptr;
-      }
-    }
-  }
-
-  inline void WaitForThreads(int id) {
-    if (thread_[id]) {
-      thread_[id]->join();
-      thread_[id] = nullptr;
-    }
-  }
+  AlignedBuffer* buffer_;
+  AlignedBuffer* buffer_switch_;
+  AlignedBuffer buffer_spanning_;
+  std::thread* thread_;
 
  private:
   uint64_t buffer_offset_;
