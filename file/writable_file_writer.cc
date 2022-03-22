@@ -636,6 +636,11 @@ IOStatus WritableFileWriter::WriteDirect() {
   DataVerificationInfo v_info;
   char checksum_buf[sizeof(uint32_t)];
 
+  // Prepare parameters to lower layer
+  dbg_.buf_ = buf_;
+  dbg_.file_advance_ = file_advance;
+  dbg_.leftover_tail_ = leftover_tail;
+
   while (left > 0) {
     // Check how much is allowed
     size_t size;
@@ -662,9 +667,7 @@ IOStatus WritableFileWriter::WriteDirect() {
                                              IOOptions(), v_info, nullptr);
       } else {
         s = writable_file_->PositionedAppend(Slice(src, size), write_offset,
-                                             IOOptions(),
-                                             new IODebugContext(buf_,
-                                               file_advance, leftover_tail));
+                                             IOOptions(), &dbg_);
       }
 
       if (ShouldNotifyListeners()) {

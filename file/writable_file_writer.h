@@ -264,6 +264,9 @@ class WritableFileWriter {
 
   const char* GetFileChecksumFuncName() const;
 
+  // For ZSG
+  IODebugContext dbg_;
+
  private:
   // Used when os buffering is OFF and we are writing
   // DMA such as in Direct I/O mode
