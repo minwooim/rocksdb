@@ -151,7 +151,6 @@ ifeq ($(DEBUG_LEVEL),0)
 OPT += -DNDEBUG
 
 ifneq ($(USE_RTTI), 1)
-	CXXFLAGS += -fno-rtti
 else
 	CXXFLAGS += -DROCKSDB_USE_RTTI
 endif
@@ -159,7 +158,6 @@ else
 ifneq ($(USE_RTTI), 0)
 	CXXFLAGS += -DROCKSDB_USE_RTTI
 else
-	CXXFLAGS += -fno-rtti
 endif
 
 ifdef ASSERT_STATUS_CHECKED
