@@ -143,5 +143,11 @@ class RandomAccessFileReader {
   bool use_direct_io() const { return file_->use_direct_io(); }
 
   IOStatus PrepareIOOptions(const ReadOptions& ro, IOOptions& opts);
+
+  IODebugContext dbg_;
+
+  void UpdateDebugContext(bool for_compaction) {
+    dbg_.for_compaction_ = for_compaction;
+  }
 };
 }  // namespace ROCKSDB_NAMESPACE
