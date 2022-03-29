@@ -253,6 +253,13 @@ class Env {
     WLTH_MEDIUM,       // Data written has a medium life time
     WLTH_LONG,         // Data written has a long life time
     WLTH_EXTREME,      // Data written has an extremely long life time
+
+    WLTH_L0 = 1,
+    WLTH_L1 = 2,
+    WLTH_L2 = 3,
+    WLTH_L3 = 4,
+    WLTH_L4 = 5,
+    WLTH_L5 = 6,
   };
 
   // Create an object that writes to a new file with the specified
