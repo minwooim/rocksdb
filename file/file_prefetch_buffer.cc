@@ -160,6 +160,8 @@ bool FilePrefetchBuffer::TryReadFromCacheForCompaction(const IOOptions& opts,
     Prefetch(opts, file_reader_, offset, std::max(n, readahead_size_), true);
     *result = Slice(buffer_->BufferStart() + offset - buffer_offset_, n);
 
+    prefetched_ = true;
+    iter_time_ = begin;
     std::chrono::steady_clock::time_point end = std::chrono::steady_clock::now();
     ROCKS_LOG_INFO(_logger, "readahead: (1) prefetch %lu µs",
                    std::chrono::duration_cast<std::chrono::microseconds>(end - begin).count());
@@ -213,6 +215,13 @@ bool FilePrefetchBuffer::TryReadFromCacheForCompaction(const IOOptions& opts,
     ROCKS_LOG_INFO(_logger, "readahead: (3) swap %lu µs",
                    std::chrono::duration_cast<std::chrono::microseconds>(end - begin).count());
   } else {
+    std::chrono::steady_clock::time_point _e = std::chrono::steady_clock::now();
+    if (prefetched_) {
+      ROCKS_LOG_INFO(_logger, "readahead: (4) iter_time %lu µs",
+                     std::chrono::duration_cast<std::chrono::microseconds>(_e - iter_time_).count());
+      prefetched_ = false;
+    }
+
     // Now, it's time to trigger a new thread to read the next readahead block.
     *result = Slice(buffer_->BufferStart() + offset - buffer_offset_, n);
   }

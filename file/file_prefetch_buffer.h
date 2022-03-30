@@ -11,6 +11,7 @@
 #include <atomic>
 #include <sstream>
 #include <string>
+#include <chrono>
 
 #include "file/random_access_file_reader.h"
 #include "port/port.h"
@@ -126,6 +127,8 @@ class FilePrefetchBuffer {
   AlignedBuffer* buffer_switch_;
   AlignedBuffer buffer_spanning_;
   std::thread* thread_;
+  std::chrono::steady_clock::time_point iter_time_;
+  bool prefetched_;
 
  private:
   uint64_t buffer_offset_;
