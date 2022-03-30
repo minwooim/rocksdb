@@ -12,6 +12,7 @@
 #include <algorithm>
 #include <mutex>
 #include <iostream>
+#include <chrono>
 
 #include "file/random_access_file_reader.h"
 #include "monitoring/histogram.h"
@@ -23,6 +24,8 @@
 #include "logging/logging.h"
 
 namespace ROCKSDB_NAMESPACE {
+
+extern std::shared_ptr<Logger> _logger;
 
 static void BGReadahead(const IOOptions& opts,
                         RandomAccessFileReader* reader,
@@ -150,10 +153,16 @@ void FilePrefetchBuffer::SwapBuffersAndReadahead(const IOOptions& opts) {
 bool FilePrefetchBuffer::TryReadFromCacheForCompaction(const IOOptions& opts,
                                           uint64_t offset, size_t n,
                                           Slice* result, Status* /*status*/) {
+  std::chrono::steady_clock::time_point begin = std::chrono::steady_clock::now();
+
   // First time for this compaction
   if (!buffer_->CurrentSize()) {
     Prefetch(opts, file_reader_, offset, std::max(n, readahead_size_), true);
     *result = Slice(buffer_->BufferStart() + offset - buffer_offset_, n);
+
+    std::chrono::steady_clock::time_point end = std::chrono::steady_clock::now();
+    ROCKS_LOG_INFO(_logger, "readahead: (1) prefetch %lu µs",
+                   std::chrono::duration_cast<std::chrono::microseconds>(end - begin).count());
   } else if (offset < buffer_offset_ + buffer_->CurrentSize() &&
              offset + n > buffer_offset_ + buffer_->CurrentSize()) {
     // Now, we should switch the buffer to the new one with triggering a new
@@ -180,6 +189,10 @@ bool FilePrefetchBuffer::TryReadFromCacheForCompaction(const IOOptions& opts,
     *result = Slice(buffer_spanning_.BufferStart() +
                     (offset - buffer_offset_) - chunk_offset_in_buffer, n);
 
+    std::chrono::steady_clock::time_point end = std::chrono::steady_clock::now();
+    ROCKS_LOG_INFO(_logger, "readahead: (2) spanning %lu µs",
+                   std::chrono::duration_cast<std::chrono::microseconds>(end - begin).count());
+
     buffer_offset_ += buffer_->CurrentSize();
     if (buffer_switch_->CurrentSize() != buffer_switch_->Capacity()) {
       // In this case, the last chunk of the file.
@@ -189,11 +202,16 @@ bool FilePrefetchBuffer::TryReadFromCacheForCompaction(const IOOptions& opts,
     } else {
       SwapBuffersAndReadahead(opts);
     }
+
   } else if (offset == buffer_offset_ + buffer_->CurrentSize()) {
     thread_->join();
     buffer_offset_ += buffer_->CurrentSize();
     SwapBuffersAndReadahead(opts);
     *result = Slice(buffer_->BufferStart() + offset - buffer_offset_, n);
+
+    std::chrono::steady_clock::time_point end = std::chrono::steady_clock::now();
+    ROCKS_LOG_INFO(_logger, "readahead: (3) swap %lu µs",
+                   std::chrono::duration_cast<std::chrono::microseconds>(end - begin).count());
   } else {
     // Now, it's time to trigger a new thread to read the next readahead block.
     *result = Slice(buffer_->BufferStart() + offset - buffer_offset_, n);
