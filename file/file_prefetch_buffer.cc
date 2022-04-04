@@ -214,9 +214,11 @@ bool FilePrefetchBuffer::TryReadFromCache(const IOOptions& opts,
     return false;
   }
 
+  /*
   if (for_compaction) {
     return TryReadFromCacheForCompaction(opts, offset, n, result, status);
   }
+  */
 
   // If the buffer contains only a few of the requested bytes:
   //    If readahead is enabled: prefetch the remaining bytes + readahead bytes
