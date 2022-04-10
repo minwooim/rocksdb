@@ -104,6 +104,7 @@ Status FilePrefetchBuffer::Prefetch(const IOOptions& opts,
   Slice result;
   size_t read_len = static_cast<size_t>(roundup_len - chunk_len);
 
+  /*
   if (for_compaction) {
     uint64_t buff_offset = chunk_len + read_len;
     uint64_t file_offset = rounddown_offset + buff_offset;
@@ -116,6 +117,7 @@ Status FilePrefetchBuffer::Prefetch(const IOOptions& opts,
                               file_offset, buffer_switch_->Capacity(),
                               buffer_switch_);
   }
+  */
 
   s = reader->Read(opts, rounddown_offset + chunk_len, read_len, &result,
                    buffer_->BufferStart() + chunk_len, nullptr, for_compaction);
