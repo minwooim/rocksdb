@@ -187,7 +187,7 @@ class WritableFileWriter {
 
     if (file_name_.substr(file_name_.size() - 3) == "sst") {
       // ZSG_WRITERS
-      buf_->AllocateNewBuffer(ZSG_ZONE_SIZE);
+      buf_->AllocateNewBuffer(max_buffer_size_);
     } else {
       buf_->AllocateNewBuffer(std::min((size_t)65536, max_buffer_size_));
     }
