@@ -287,7 +287,7 @@ IOStatus WritableFileWriter::Flush() {
           // finished.
           buf_ = new AlignedBuffer;
           buf_->Alignment(writable_file_->GetRequiredBufferAlignment());
-          buf_->AllocateNewBuffer(ZSG_ZONE_SIZE);
+          buf_->AllocateNewBuffer(max_buffer_size_);
         }
       }
 #endif  // !ROCKSDB_LITE
