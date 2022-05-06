@@ -784,6 +784,7 @@ bool FlushJob::MemPurgeDecider() {
           threshold);
 }
 
+std::shared_ptr<rocksdb::Logger> _info_log;
 Status FlushJob::WriteLevel0Table() {
   AutoThreadOperationStageUpdater stage_updater(
       ThreadStatus::STAGE_FLUSH_WRITE_L0);
@@ -812,6 +813,7 @@ Status FlushJob::WriteLevel0Table() {
     uint64_t total_num_entries = 0, total_num_deletes = 0;
     uint64_t total_data_size = 0;
     size_t total_memory_usage = 0;
+    _info_log = static_cast<std::shared_ptr<rocksdb::Logger>>(db_options_.info_log);
     for (MemTable* m : mems_) {
       ROCKS_LOG_INFO(
           db_options_.info_log,
