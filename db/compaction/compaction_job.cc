@@ -2071,11 +2071,13 @@ Status CompactionJob::OpenCompactionOutputFile(
       sub_compact->compaction->OutputFilePreallocationSize()));
   const auto& listeners =
       sub_compact->compaction->immutable_options()->listeners;
+
+  int output_level = sub_compact->compaction->output_level();
   sub_compact->outfile.reset(new WritableFileWriter(
       std::move(writable_file), fname, file_options_, db_options_.clock,
       io_tracer_, db_options_.stats, listeners,
       db_options_.file_checksum_gen_factory.get(),
-      tmp_set.Contains(FileType::kTableFile), false));
+      tmp_set.Contains(FileType::kTableFile), false, output_level));
 
   TableBuilderOptions tboptions(
       *cfd->ioptions(), *(sub_compact->compaction->mutable_cf_options()),
@@ -2248,6 +2250,7 @@ void CompactionJob::LogCompaction() {
     }
     stream << "score" << compaction->score() << "input_data_size"
            << compaction->CalculateTotalInputSize();
+    stream << "output_level" << compaction->output_level();
   }
 }
 

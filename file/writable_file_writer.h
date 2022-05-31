@@ -150,6 +150,8 @@ class WritableFileWriter {
   uint32_t buffered_data_crc32c_checksum_;
   bool buffered_data_with_checksum_;
 
+  int output_level_;
+
  public:
   WritableFileWriter(
       std::unique_ptr<FSWritableFile>&& file, const std::string& _file_name,
@@ -159,7 +161,8 @@ class WritableFileWriter {
       const std::vector<std::shared_ptr<EventListener>>& listeners = {},
       FileChecksumGenFactory* file_checksum_gen_factory = nullptr,
       bool perform_data_verification = false,
-      bool buffered_data_with_checksum = false)
+      bool buffered_data_with_checksum = false,
+      int output_level = -1)
       : file_name_(_file_name),
         writable_file_(std::move(file), io_tracer, _file_name),
         clock_(clock),
@@ -179,15 +182,19 @@ class WritableFileWriter {
         checksum_finalized_(false),
         perform_data_verification_(perform_data_verification),
         buffered_data_crc32c_checksum_(0),
-        buffered_data_with_checksum_(buffered_data_with_checksum) {
+        buffered_data_with_checksum_(buffered_data_with_checksum),
+        output_level_(output_level) {
     TEST_SYNC_POINT_CALLBACK("WritableFileWriter::WritableFileWriter:0",
                              reinterpret_cast<void*>(max_buffer_size_));
     buf_ = new AlignedBuffer;
     buf_->Alignment(writable_file_->GetRequiredBufferAlignment());
 
     if (file_name_.substr(file_name_.size() - 3) == "sst") {
-      // ZSG_WRITERS
-      buf_->AllocateNewBuffer(ZSG_WRITE_BUFFER_SIZE);
+      if (output_level_ < ZSG_FAST_LEVEL) {
+        buf_->AllocateNewBuffer(max_buffer_size_);
+      } else {
+        buf_->AllocateNewBuffer(ZSG_WRITE_BUFFER_SIZE);
+      }
     } else {
       buf_->AllocateNewBuffer(std::min((size_t)65536, max_buffer_size_));
     }
