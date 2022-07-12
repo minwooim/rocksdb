@@ -64,7 +64,7 @@ class BlockBasedTable : public TableReader {
   static const size_t kMaxCacheKeyPrefixSize = kMaxVarint64Length * 3 + 1;
 
   // All the below fields control iterator readahead
-  static const size_t kInitAutoReadaheadSize = 8 * 1024;
+  static const size_t kInitAutoReadaheadSize = 16 * 1024 * 1024;
   static const int kMinNumFileReadsToStartAutoReadahead = 2;
 
   // Attempt to open the table that is stored in bytes [0..file_size)

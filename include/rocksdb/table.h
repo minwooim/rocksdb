@@ -462,7 +462,7 @@ struct BlockBasedTableOptions {
   // change.
   //
   // Default: 256 KB (256 * 1024).
-  size_t max_auto_readahead_size = 256 * 1024;
+  size_t max_auto_readahead_size = 16 * 1024 * 1024;
 
   // If enabled, prepopulate warm/hot blocks (data, uncompressed dict, index and
   // filter blocks) which are already in memory into block cache at the time of
