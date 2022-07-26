@@ -158,7 +158,9 @@ struct IODebugContext {
   };
   uint64_t trace_data = 0;
 
-  IODebugContext() {}
+  IODebugContext() {
+    for_wal_ = false;
+  }
 
   // for prefetch concurrent reads
   bool for_compaction_;
@@ -167,10 +169,12 @@ struct IODebugContext {
   void *buf_;
   size_t file_advance_;
   size_t leftover_tail_;
+  bool for_wal_;
   IODebugContext(void *buf, size_t f, size_t l) :
                       buf_(buf),
                       file_advance_(f),
-                      leftover_tail_(l)  {}
+                      leftover_tail_(l),
+                      for_wal_(false)  {}
 
   void AddCounter(std::string& name, uint64_t value) {
     counters.emplace(name, value);
